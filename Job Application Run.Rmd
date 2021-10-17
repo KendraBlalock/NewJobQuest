@@ -1,0 +1,118 @@
+---
+title: "Job Application Run"
+author: "Kendra Blalock"
+date: "10/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gganimate)
+library(readxl)
+
+```
+
+
+# Recent Hunt for a New Job
+
+Over the summer I began looking for new employment opportunities. It has been a good number of years since I last applied for a job and it was interesting to see how quickly some organizations contracted me after my initial application (either with an interview request or a rejection email). 
+
+I thought it would be fun to visualize the timing of responses.
+
+```{r load}
+
+#Load job application data
+data <- read_xlsx("2021 Job Applications.xlsx")
+
+```
+
+# Dataset Setup
+
+Response times ranged from 1 to 52 days.
+
+I updated the dataset with a few additional variables to associate color and shape in the plot. I censored applications that had no response with a date of 1 day following the last response I received. 
+
+```{r data}
+
+#Get the shortest and longest response time. 
+data %>% 
+  mutate(Diff = Response_Date-Date_Applied) %>% 
+  summarise(Shortest_Response = min(Diff, na.rm = T),
+            Longest_Response = max(Diff, na.rm = T))
+
+#Censor the NAs in Response_Date (which means no response was received) 
+#to the day after the last response 2021-09-24
+data$Response_Date[is.na(data$Response_Date)] <- as.Date(max(data$Response_Date, na.rm = TRUE)) + 1
+
+#Get a count of the number of days from first application to last response
+max(data$Response_Date) - min(data$Date_Applied)
+
+
+#Add a day counter for each job applied during the 71-day range 
+data <- data %>% 
+  slice(rep(1:n(), each = 71)) %>% 
+  group_by(ID) %>% 
+  mutate(Day_Count = 1:71) %>% 
+  mutate(First_Apply = min(data$Date_Applied),
+         Last_Reply = max(data$Response_Date)) %>% 
+  mutate(Day = as.Date(First_Apply) + Day_Count - 1) %>% 
+  mutate(Keep = case_when(Day >= as.Date(Date_Applied) & 
+                            Day <= as.Date(Response_Date) ~ 1,
+    T ~ 0)) %>% 
+  filter(Keep == 1) %>% 
+  group_by(ID) %>% 
+  mutate(Day_Linger = row_number())
+
+#Add a flag for the day the response was received. 
+#Those with 9/25 (no responses) are coded as 0
+
+data <- data %>% 
+  mutate(Response_Flag = case_when(Day == "2021-09-25" ~ 0,
+    Day == as.Date(Response_Date) ~ 1,
+    T ~ 0)) 
+
+``` 
+
+# Plot
+
+This project is mostly an excuse to try out gganimate. The plot slowly progresses through time, starting at the first day I submitted a job application and stopping the day after the last response was received. When a response is received for an application, a star is noted at the end of the row. This plot does not show the kind of response received (interview request vs. rejection). 
+
+The longer the application had been sitting without a response, the lighter the row becomes until it fades out to white. 
+```{r plot}
+#
+p <- ggplot(data, aes(x= Day_Count, y = ID, group = as.factor(Response_Flag))) +
+  geom_point(aes(color = Day_Linger, 
+                 shape= as.factor(Response_Flag),
+                 size= as.factor(Response_Flag))) +
+  labs(title = "Time until Reponse to Job Applications",
+       y = "Number of Applications Submitted",
+       x = "Days Since I Started Applying")+
+  scale_y_continuous(limits = c(0, 50))+
+  scale_x_continuous(breaks = c(0,10,20,30,40,50,60,70))+
+  scale_shape_manual(values=c(15, 8))+
+  scale_size_manual(values=c(2.8,2))+
+  scale_colour_gradient(high = "grey100", low = "grey0")+
+  theme(
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+p2 <- p + transition_time(Day_Count)+
+  shadow_mark(alpha = 1, size = 2)
+
+animate(p2, fps = 5)
+
+``` 
+
+# The End
+
+I knew that applying to jobs would be time consuming; however, I forgot how emotionally taxing the process can be. Waiting to hear back from a job you think would be a great fit - but they never respond, getting rejected only one day after you put in an application, getting a request for multiple interviews at the same time and juggling each of them. I am glad I was able to end my job search after 70 days. I am looking forward to spending my free time on basically anything else.
+
+
+![](JobApplicationRun.jpg)
